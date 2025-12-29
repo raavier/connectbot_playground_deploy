@@ -1,10 +1,10 @@
 import json
+import requests
 from typing import Any, Callable, Generator
 from uuid import uuid4
 
 import mlflow
 from databricks.sdk import WorkspaceClient
-from databricks_openai import UCFunctionToolkit
 from mlflow.entities import SpanType
 from mlflow.pyfunc import ResponsesAgent
 from mlflow.types.responses import (
@@ -14,7 +14,6 @@ from mlflow.types.responses import (
     output_to_responses_items_stream,
     to_chat_completions_input,
 )
-from openai import OpenAI
 from pydantic import BaseModel
 
 # Configurações
@@ -29,25 +28,95 @@ class ToolInfo(BaseModel):
     spec: dict
     exec_fn: Callable
 
-def create_tool_info(tool_spec, exec_fn_param=None):
-    tool_spec["function"].pop("strict", None)
-    tool_name = tool_spec["function"]["name"]
-    udf_name = tool_name.replace("__", ".")
+# Definir a tool manualmente
+def query_genie_tool(question: str) -> str:
+    """
+    Query the Genie Space with a natural language question about CRM data.
 
-    def exec_fn(**kwargs):
-        from unitycatalog.ai.core.base import get_uc_function_client
-        uc_function_client = get_uc_function_client()
-        function_result = uc_function_client.execute_function(udf_name, kwargs)
-        if function_result.error is not None:
-            return function_result.error
-        return function_result.value
+    Args:
+        question: Natural language question to ask Genie
 
-    return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
+    Returns:
+        Answer from Genie Space with data and insights
+    """
+    try:
+        # Obter workspace client (já tem autenticação)
+        workspace_client = WorkspaceClient()
 
-# UC Function: query_genie
-UC_TOOL_NAMES = ["hs_franquia.gold_connect_bot.query_genie"]
-uc_toolkit = UCFunctionToolkit(function_names=UC_TOOL_NAMES)
-TOOL_INFOS = [create_tool_info(tool_spec) for tool_spec in uc_toolkit.tools]
+        # Pegar host e token do workspace client
+        api_client = workspace_client.api_client
+        host = api_client.host
+        token = api_client.token
+
+        # API endpoint
+        url = f"{host}/api/2.0/genie/spaces/{GENIE_SPACE_ID}/start-conversation"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {"content": question}
+
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        result = response.json()
+
+        # Extrair resposta do Genie
+        if isinstance(result, dict):
+            # Tentar pegar o conteúdo da mensagem
+            if "message" in result and isinstance(result["message"], dict):
+                if "content" in result["message"]:
+                    return result["message"]["content"]
+
+            # Tentar pegar attachments (query results)
+            if "attachments" in result:
+                attachments = result["attachments"]
+                if attachments and len(attachments) > 0:
+                    first_attachment = attachments[0]
+                    if "text" in first_attachment:
+                        return first_attachment["text"]["content"]
+                    if "query" in first_attachment:
+                        query_result = first_attachment["query"]
+                        if "result" in query_result:
+                            return json.dumps(query_result["result"], ensure_ascii=False, indent=2)
+
+            # Se não encontrou, retornar o JSON completo
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        return str(result)
+
+    except requests.exceptions.Timeout:
+        return "Error: Genie query timed out after 60 seconds. Try a simpler question."
+    except requests.exceptions.RequestException as e:
+        return f"Error calling Genie API: {str(e)}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# Criar tool spec manualmente
+TOOL_INFOS = [
+    ToolInfo(
+        name="query_genie",
+        spec={
+            "type": "function",
+            "function": {
+                "name": "query_genie",
+                "description": "Query the Genie Space with a natural language question about CRM data. Use this for any questions about verifications, risks, deviations, users, actions, or any CRM metrics.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "Natural language question to ask Genie about CRM data"
+                        }
+                    },
+                    "required": ["question"]
+                }
+            }
+        },
+        exec_fn=query_genie_tool
+    )
+]
 
 class GenieBot(ResponsesAgent):
     def __init__(self, llm_endpoint: str, tools: list[ToolInfo]):
