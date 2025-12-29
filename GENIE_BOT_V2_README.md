@@ -46,8 +46,9 @@ Bot minimalista que usa `GenieAgent` do `databricks-langchain` para integração
    - Copie o ID da URL ou configurações
 
 3. **Tabelas**:
-   - Identifique as tabelas principais usadas pelo Genie
+   - Identifique **TODAS** as tabelas usadas pelo Genie
    - Formato: `catalog.schema.table`
+   - Você precisa adicionar todas para garantir autenticação correta
 
 ### Step 2: Editar genie_bot_v2.py
 
@@ -61,8 +62,20 @@ GENIE_SPACE_ID = "seu-space-id-aqui"
 WAREHOUSE_ID = "seu-warehouse-id"
 CATALOG = "hs_franquia"
 SCHEMA = "gold_connect_bot"
-TABLE = "sua_tabela_principal"
+
+# Liste TODAS as tabelas usadas pelo Genie
+TABLES = [
+    "vw_crm_verification",
+    "vw_crm_verification_involved",
+    "vw_crm_verification_question",
+    "vw_crm_user",
+    "vw_crm_action",
+    "vw_crm_location",
+    "vw_general_de_para_hier_org_unit",
+]
 ```
+
+**Importante**: Adicionar todas as tabelas garante que o Databricks provisione credenciais corretas para todas elas.
 
 ### Step 3: Executar o Notebook
 

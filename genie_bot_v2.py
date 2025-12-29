@@ -184,14 +184,27 @@ from pkg_resources import get_distribution
 WAREHOUSE_ID = "SEU_WAREHOUSE_ID"  # ID do SQL Warehouse usado pelo Genie
 CATALOG = "hs_franquia"
 SCHEMA = "gold_connect_bot"
-TABLE = "sua_tabela"  # Tabela principal usada pelo Genie
+
+# TODO: Adicionar todas as tabelas usadas pelo Genie Space
+TABLES = [
+    "vw_crm_verification",
+    "vw_crm_verification_involved",
+    "vw_crm_verification_question",
+    "vw_crm_user",
+    "vw_crm_action",
+    "vw_crm_location",
+    "vw_general_de_para_hier_org_unit",
+]
 
 resources = [
     DatabricksServingEndpoint(endpoint_name=LLM_ENDPOINT_NAME),
     DatabricksGenieSpace(genie_space_id=GENIE_SPACE_ID),
     DatabricksSQLWarehouse(warehouse_id=WAREHOUSE_ID),
-    DatabricksTable(table_name=f"{CATALOG}.{SCHEMA}.{TABLE}"),
 ]
+
+# Adicionar todas as tabelas como resources
+for table in TABLES:
+    resources.append(DatabricksTable(table_name=f"{CATALOG}.{SCHEMA}.{table}"))
 
 input_example = {
     "input": [{"role": "user", "content": "Quantas verificações em 2024?"}]
