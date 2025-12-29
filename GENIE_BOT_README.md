@@ -1,18 +1,16 @@
 # Genie Bot MVP - Guia de Deployment
 
-Bot minimalista que encaminha queries para Databricks Genie Space via MLflow endpoint.
+Bot minimalista que encaminha queries para Databricks Genie Space via MLflow endpoint usando chamada direta à API (sem UC Functions).
 
 ## Arquivos Criados
 
-1. **[genie_bot.py](genie_bot.py)** - ResponsesAgent com integração Genie
+1. **[genie_bot.ipynb](genie_bot.ipynb)** - Notebook de desenvolvimento e testes
 2. **[deploy_genie_bot.ipynb](deploy_genie_bot.ipynb)** - Notebook de deployment
-3. **[create_uc_function_query_genie.sql](create_uc_function_query_genie.sql)** - UC Function para Genie API
 
 ## Pré-requisitos
 
 - ✅ Genie Space criado e funcional
-- ✅ Acesso ao Databricks workspace
-- ✅ Permissões para criar UC Functions em `hs_franquia.gold_connect_bot`
+- ✅ Acesso ao Databricks workspace (WorkspaceClient cuida da autenticação automaticamente)
 - ✅ Acesso ao endpoint LLM `databricks-llama-4-maverick`
 
 ## Passo a Passo
@@ -23,34 +21,28 @@ Bot minimalista que encaminha queries para Databricks Genie Space via MLflow end
 2. A URL terá o formato: `https://.../genie/rooms/{SPACE_ID}`
 3. Copie o `SPACE_ID`
 
-### Step 2: Criar UC Function
+### Step 2: Configurar genie_bot.ipynb
 
-1. Abra o SQL Editor ou um notebook SQL no Databricks
-2. Execute o conteúdo de [create_uc_function_query_genie.sql](create_uc_function_query_genie.sql)
-3. Substitua `SEU_SPACE_ID_AQUI` pelo Space ID copiado no Step 1
-4. Execute o teste no final do script para validar
-
-**Validação esperada**:
-```sql
-SELECT hs_franquia.gold_connect_bot.query_genie(
-  'Quantas verificações tivemos em 2024?',
-  'seu-space-id'
-);
-```
-Deve retornar uma resposta do Genie.
-
-### Step 3: Configurar genie_bot.py
-
-1. Edite [genie_bot.py](genie_bot.py)
-2. Linha 22: Substitua `SEU_SPACE_ID_AQUI` pelo seu Space ID
+1. Upload [genie_bot.ipynb](genie_bot.ipynb) para o Databricks workspace
+2. Abra o notebook
+3. Na célula de configurações, substitua `SEU_SPACE_ID_AQUI` pelo seu Space ID:
    ```python
    GENIE_SPACE_ID = "seu-space-id-aqui"
    ```
 
-### Step 4: Deploy via Notebook
+### Step 3: Testar localmente no notebook
 
-1. Upload [genie_bot.py](genie_bot.py) e [deploy_genie_bot.ipynb](deploy_genie_bot.ipynb) para o Databricks workspace
-2. Abra [deploy_genie_bot.ipynb](deploy_genie_bot.ipynb)
+1. Execute as células em ordem:
+   - **Cell 0**: Instala dependências
+   - **Cells 1-6**: Define imports, configurações, tool, specs, classe GenieBot, e inicializa agent
+   - **Cells 7-13**: Testes diversos (simple query, streaming, multiple queries, etc.)
+
+2. Valide que as respostas do Genie estão corretas
+
+### Step 4: Deploy via deploy_genie_bot.ipynb
+
+1. Upload [deploy_genie_bot.ipynb](deploy_genie_bot.ipynb) para o Databricks workspace
+2. Abra o notebook
 3. Execute as células sequencialmente:
    - **Cell 1**: Instala dependências
    - **Cell 2**: Testa localmente
@@ -98,21 +90,12 @@ print(response.json())
 
 ## Troubleshooting
 
-### Erro: UC Function não encontrada
-
-**Problema**: `Function hs_franquia.gold_connect_bot.query_genie not found`
-
-**Solução**:
-- Verifique se a UC Function foi criada corretamente
-- Execute: `SHOW FUNCTIONS IN hs_franquia.gold_connect_bot LIKE 'query_genie'`
-- Se não aparecer, re-execute [create_uc_function_query_genie.sql](create_uc_function_query_genie.sql)
-
 ### Erro: Genie API timeout
 
-**Problema**: Query demora muito e timeout após 30s
+**Problema**: Query demora muito e timeout após 60s
 
 **Solução**:
-- Aumente o timeout na UC Function (linha com `timeout=30`)
+- Aumente o timeout na função `query_genie_tool` (linha com `timeout=60`)
 - Simplifique a query para o Genie
 - Verifique se o Genie Space está respondendo
 
@@ -121,26 +104,36 @@ print(response.json())
 **Problema**: `User does not have permission to access...`
 
 **Solução**:
-- Verifique permissões no schema `hs_franquia.gold_connect_bot`
 - Verifique acesso ao Genie Space
-- Verifique acesso ao endpoint LLM
+- Verifique acesso ao endpoint LLM `databricks-llama-4-maverick`
+- Verifique se o WorkspaceClient está autenticado corretamente
 
 ### Agent não está chamando a tool
 
 **Problema**: LLM responde diretamente sem usar query_genie
 
 **Solução**:
-- Verifique se a UC Function está listada em `UC_TOOL_NAMES`
+- Verifique se `TOOL_INFOS` foi criado corretamente
 - Ajuste o SYSTEM_PROMPT para ser mais explícito
 - Teste com queries mais claras sobre dados
+- Verifique se a tool spec está sendo passada corretamente para o LLM
+
+### Erro: NameError com ToolInfo
+
+**Problema**: `NameError: name 'ToolInfo' is not defined`
+
+**Solução**:
+- Verifique se todas as células foram executadas em ordem
+- Re-execute a célula que importa `from pydantic import BaseModel`
+- Re-execute a célula que define a classe `ToolInfo`
 
 ## Próximos Passos (Features Futuras)
 
 Após validar o MVP funcionando:
 
-1. **Access Control**: Adicionar UC Function `check_user_access`
-2. **Conversation History**: UC Functions `save_conversation` e `get_conversation_context`
-3. **Large Result Uploads**: UC Function `upload_large_result` para datasets grandes
+1. **Access Control**: Adicionar controle de acesso por usuário/grupo
+2. **Conversation History**: Persistir histórico de conversas
+3. **Large Result Uploads**: Gerenciar datasets grandes via upload
 4. **Vector Search**: Adicionar busca em documentação via Vector Search
 5. **Testes**: Criar suite de testes automatizados
 6. **Monitoramento**: Adicionar métricas customizadas e alertas
@@ -152,14 +145,23 @@ User Query → MLflow Endpoint → ResponsesAgent.predict()
   ↓
 LLM decide chamar tool query_genie
   ↓
-UC Function query_genie → Genie Space API
-  ↓
+query_genie_tool (Python function) → Genie Space API
+  ↓  (autenticação via WorkspaceClient)
 Genie retorna SQL + resultado
   ↓
 LLM formata resposta final
   ↓
 Response para usuário
 ```
+
+## Diferenças em relação ao driver.ipynb
+
+Este bot segue o mesmo padrão do [driver.ipynb](driver.ipynb), mas com simplificações:
+
+1. **Sem UC Functions**: Chama a API do Genie diretamente via Python (não via UC Function)
+2. **Autenticação automática**: WorkspaceClient cuida de toda autenticação
+3. **Uma única tool**: Apenas `query_genie` que encaminha para Genie Space
+4. **Menos dependências**: Não precisa de `unitycatalog-ai` para execução de UC Functions
 
 ## Referências
 
